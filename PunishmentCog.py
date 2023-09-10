@@ -34,6 +34,23 @@ class PunishmentCog(commands.Cog):
 
         if not os.path.exists(self.bot.args.downloads_dir):
             os.makedirs(self.bot.args.downloads_dir)
+
+        self.forbidden_lines = []
+
+        if os.path.exists(self.bot.args.config_dir):
+            self.read_config()
+
+    def read_config(self):
+        forbidden_path = os.path.join(self.bot.args.config_dir, "forbidden.txt")
+        if os.path.exists(forbidden_path):
+            logging.info("Config 'forbidden.txt' found.")
+            with open(forbidden_path, "r", encoding="utf-8") as fin:
+                lines = fin.readlines()
+
+            for line in lines:
+                line_strip = line.strip()
+                self.forbidden_lines.append(line_strip)
+                logging.info(f"Forbidden line {line_strip} registered")
     
     @commands.command()
     async def punish(self, ctx: commands.Context, username, escape_phrase, auto_pardon_time):
@@ -144,7 +161,7 @@ class PunishmentCog(commands.Cog):
 
         text = text.strip()
 
-        member = ctx.guild.get_member(user)
+        member: discord.Member = ctx.guild.get_member(user)
 
         if not text:
             logging.info(f"[Text recognition] {member.name}: <empty string>")
@@ -165,14 +182,23 @@ class PunishmentCog(commands.Cog):
         logging.info(f"[Text recognition] {member.name} sentences: {sentences}")
 
         for sentence in sentences:
-            ratio = fuzz.ratio(sentence, escape_phrase)
-            if ratio >= 80:
-                await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio}% close to {escape_phrase}!")
+            ratio_escape = fuzz.ratio(sentence, escape_phrase)
+            if ratio_escape >= 80:
+                await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio_escape}% close to {escape_phrase}!")
                 await self.pardon_internal(ctx, [member])
                 break
 
-            elif ratio >= 50:
-                await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio}% close to {escape_phrase}!")
+            elif ratio_escape >= 50:
+                await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio_escape}% close to {escape_phrase}!")
+
+            for forbidden_line in self.forbidden_lines:
+                ratio_forbidden = fuzz.ratio(sentence, forbidden_line)
+                if ratio_forbidden >= 80:
+                    logging.info(f"Forbidden line {forbidden_line} detected in {member.name}'s voice")
+                    await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio_forbidden}% close to forbidden {forbidden_line}!")
+                    await self.play_tts(ctx, f"{member.id}-forbidden", "Shut up, monkey", None)
+                    await member.edit(mute=True)
+                    break
         
 
     def text_recognition_callback(self, sink, user, text):
@@ -237,7 +263,6 @@ class PunishmentCog(commands.Cog):
             logging.info(f"Nobody is in prison channel {prison_channel.name}. Disconnecting.")
 
             try:
-                # with channel_disconnect_lock:
                 if not ctx.voice_client:
                     return
 
@@ -270,21 +295,27 @@ class PunishmentCog(commands.Cog):
         
         await self.pardon_internal(ctx, members_to_pardon)
 
+    async def play_tts(self, ctx: commands.Context, filename, text, playback_finished_callback):
+        logging.info(f"[TTS]: {text}")
+
+        gtts = gTTS(text=text, lang=self.announcement_language, slow=False)
+        
+        tts_file = f"{self.bot.args.downloads_dir}/{str(filename)}.mp3"
+        gtts.save(tts_file)
+        
+        audio_source = discord.FFmpegPCMAudio(tts_file)
+
+        if not ctx.voice_client.is_playing():
+            ctx.voice_client.play(audio_source, after=playback_finished_callback)
+        else:
+            logging.error("Already playing sound, using Discord's TTS instead")
+            await ctx.send(text, tts=True)
 
     async def announce_punishment(self, ctx: commands.Context, member, escape_phrase, playback_finished_callback):
 
         text = self.bot.args.announcement_pattern.format(member.name, escape_phrase)
 
-        logging.info(f"[TTS]: {text}")
-
-        gtts = gTTS(text=text, lang=self.announcement_language, slow=False)
-        
-        tts_file = f"{self.bot.args.downloads_dir}/{member.id}.mp3"
-        gtts.save(tts_file)
-        
-        audio_source = discord.FFmpegPCMAudio(tts_file)
-
-        ctx.voice_client.play(audio_source, after=playback_finished_callback)
+        await self.play_tts(ctx, f"{member.id}-announcement", text, playback_finished_callback)
 
 
 

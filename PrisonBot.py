@@ -82,6 +82,7 @@ async def main():
 
     parser.add_argument("--command_prefix", help="Commands prefix", default="$")
     parser.add_argument("--log_dir", help= "Directory for log files")
+    parser.add_argument("--config_dir", help= "Directory for config files", default="config")
     parser.add_argument("--downloads_dir", help = "Directory for downloads", default = "downloads")
     parser.add_argument("--prison_channel", help="Prison channel name", default="Prison")
     parser.add_argument("--prisoner_role", help="Prisoner role name", default="Prisoner")
