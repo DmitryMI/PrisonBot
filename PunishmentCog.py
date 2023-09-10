@@ -23,16 +23,18 @@ class PunishmentCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.sinks_map = ContextMap()
-        self.announcement_pattern = self.bot.args.announcement_pattern
-        self.announcement_language = self.bot.args.announcement_language
+        self.tts_punish_pattern = self.bot.args.tts_punish_pattern
+        self.tts_language = self.bot.args.tts_language
+        self.whisper_language = self.bot.args.whisper_language
+        self.tts_forbidden_pattern = self.bot.args.tts_forbidden_pattern
         self.admin_roles = self.bot.args.admin_roles if self.bot.args.admin_roles else []
         self.admin_usernames = self.bot.args.admin_usernames if self.bot.args.admin_usernames else []
 
         self.prisoner_role_name = self.bot.args.prisoner_role
         self.prison_channel_name = self.bot.args.prison_channel
-        self.whisper_language = self.bot.args.announcement_language
         self.prisoner_role_backup_dict = {}
         self.prisoner_escape_phrases = {}
+        self.prisoner_nick_backup_dict = {}
         self.background_tasks = []
 
         if not os.path.exists(self.bot.args.downloads_dir):
@@ -44,19 +46,24 @@ class PunishmentCog(commands.Cog):
             self.read_config()
 
     def read_config(self):
-        forbidden_path = os.path.join(self.bot.args.config_dir, "forbidden.txt")
+
+        forbidden_path = self.bot.args.forbidden_path
         if os.path.exists(forbidden_path):
-            logging.info("Config 'forbidden.txt' found.")
+            logging.info(f"Loading forbidden phrases from '{forbidden_path}'...")
             with open(forbidden_path, "r", encoding="utf-8") as fin:
                 lines = fin.readlines()
 
             for line in lines:
                 line_strip = line.strip()
                 self.forbidden_lines.append(line_strip)
-                logging.info(f"Forbidden line {line_strip} registered")
+                logging.debug(f"Forbidden line '{line_strip}' registered")
+        else:
+            logging.error(f"File {forbidden_path} not found!")
     
     @commands.command()
     async def punish(self, ctx: commands.Context, username, escape_phrase, auto_pardon_time):
+
+        logging.info(f"Punish({username}, {escape_phrase}, {auto_pardon_time}) command issued by {ctx.author.name}")
 
         has_rights = False
         author = ctx.author
@@ -107,6 +114,14 @@ class PunishmentCog(commands.Cog):
         else:
             await prison_channel.connect()
 
+        try:
+            self.prisoner_nick_backup_dict[member.id] = member.nick
+            nick = self.bot.args.punish_nick_pattern.format(member.nick)
+            await member.edit(nick=nick)
+            logging.info(f"{member.name} nickname changed to {nick}")
+        except Exception as err:
+            logging.error(f"Failed to set {member.name} nick to {nick}: {err}")
+        
         message = f"{member.name} sent to {prison_channel.name} for bad behavior!"
 
         if escape_phrase:
@@ -199,7 +214,10 @@ class PunishmentCog(commands.Cog):
                 if ratio_forbidden >= 80:
                     logging.info(f"Forbidden line {forbidden_line} detected in {member.name}'s voice")
                     await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio_forbidden}% close to forbidden {forbidden_line}!")
-                    await self.play_tts(ctx, f"{member.id}-forbidden", "Shut up, monkey", lambda e: self.forbidden_tts_callback(e, member))
+
+                    tts_text = self.tts_forbidden_pattern.format(member.name)
+
+                    await self.play_tts(ctx, f"{member.id}-forbidden", tts_text, lambda e: self.forbidden_tts_callback(e, member))
                     # await member.edit(mute=True)
                     
                     break
@@ -266,6 +284,12 @@ class PunishmentCog(commands.Cog):
             if member.id in self.prisoner_escape_phrases:
                 del self.prisoner_escape_phrases[member.id]
 
+            if member.id in self.prisoner_nick_backup_dict:
+                nick = self.prisoner_nick_backup_dict[member.id]
+                await member.edit(nick=nick)
+                del self.prisoner_nick_backup_dict[member.id]
+                logging.info(f"{member.name} nickname restored to {nick}")
+
             await ctx.send(f"Pardoned user {member.name}")
 
         prisoners_in_channel_num = 0
@@ -317,7 +341,7 @@ class PunishmentCog(commands.Cog):
     async def play_tts(self, ctx: commands.Context, filename, text, playback_finished_callback):
         logging.info(f"[TTS]: {text}")
 
-        gtts = gTTS(text=text, lang=self.announcement_language, slow=False)
+        gtts = gTTS(text=text, lang=self.tts_language, slow=False)
         
         tts_file = f"{self.bot.args.downloads_dir}/{str(filename)}.mp3"
         gtts.save(tts_file)
@@ -332,7 +356,7 @@ class PunishmentCog(commands.Cog):
 
     async def announce_punishment(self, ctx: commands.Context, member, escape_phrase, playback_finished_callback):
 
-        text = self.bot.args.announcement_pattern.format(member.name, escape_phrase)
+        text = self.tts_punish_pattern.format(member.name, escape_phrase)
 
         await self.play_tts(ctx, f"{member.id}-announcement", text, playback_finished_callback)
 

@@ -1,5 +1,5 @@
 import discord
-import argparse
+import configargparse
 import os
 import os.path
 import logging
@@ -44,6 +44,7 @@ def create_bot(args):
     return bot
 
 def configure_logging(logs_dir="logs", log_level = logging.INFO):
+
     log_file = os.path.join(logs_dir, "dbot.log")
 
     if not os.path.exists(logs_dir):
@@ -70,17 +71,23 @@ def configure_logging(logs_dir="logs", log_level = logging.INFO):
 
 
 async def main():
-    parser = argparse.ArgumentParser(
+    parser = configargparse.ArgParser(
                     prog='PrisonBot',
                     description='Discord Bot for punishing guild members',
-                    epilog='By Dmitriy')
+                    epilog='By Dmitriy', 
+                    config_file_open_func=lambda filename: open(filename, "r+", encoding="utf-8")
+                    )
 
-    #parser.add_argument('filename')           # positional argument
+    parser.add('-c', '--config', required=False, is_config_file=True, help='Config file path', default="config/config.conf")
+    parser.add('--forbidden_path', required=False, help='Path to list of forbidden phrases', default="config/forbidden.txt")
+
     group = parser.add_mutually_exclusive_group(required=True)
+
     group.add_argument('--token', help="API Token for the bot. Must be kept in secret!")
     group.add_argument('--token_file', help="API Token for the bot stored in a text file. The token must be kept in secret!")
 
     parser.add_argument("--command_prefix", help="Commands prefix", default="$")
+    parser.add_argument("--log_level", help= "Log level", choices=['DEBUG', 'INFO', 'WARNING', "ERROR", "FATAL"], default="INFO")
     parser.add_argument("--log_dir", help= "Directory for log files")
     parser.add_argument("--config_dir", help= "Directory for config files", default="config")
     parser.add_argument("--downloads_dir", help = "Directory for downloads", default = "downloads")
@@ -88,12 +95,15 @@ async def main():
     parser.add_argument("--prisoner_role", help="Prisoner role name", default="Prisoner")
     parser.add_argument("--admin_roles", help="Admin role name", nargs="*")
     parser.add_argument("--admin_usernames", help="Admin nickname", nargs="*")
-    parser.add_argument("--announcement_pattern", help="Announcement pattern for imprisonment", type=str, default="{}, say {}")
-    parser.add_argument("--announcement_language", help="Announcement language for imprisonment", type=str, default="en")
+    parser.add_argument("--tts_punish_pattern", help="Announcement pattern for imprisonment", type=str, default="{}, say {}")
+    parser.add_argument("--tts_forbidden_pattern", help="Announcement pattern for forbidden words", type=str, default="Shut up, {}")
+    parser.add_argument("--tts_language", help="Announcement language", type=str, default="en")
+    parser.add_argument("--whisper_language", help="Announcement language", type=str, default="en")
+    parser.add_argument("--punish_nick_pattern", help="Pattern for nickname change", type=str, default="Scum ({})")
 
     args = parser.parse_args()
 
-    configure_logging()
+    configure_logging(args.log_level)
 
     api_token = None
 
