@@ -14,8 +14,6 @@ import threading
 
 PUNISHMENT_CHANGE_ROLES = True
 
-MUTE_DURATION_SECONDS=30
-
 # channel_disconnect_lock = threading.Lock()
 background_tasks_lock = threading.Lock()
 
@@ -35,6 +33,8 @@ class PunishmentCog(commands.Cog):
         self.prisoner_role_backup_dict = {}
         self.prisoner_escape_phrases = {}
         self.prisoner_nick_backup_dict = {}
+        self.prisoner_channel_backup = {}
+
         self.background_tasks = []
 
         if not os.path.exists(self.bot.args.downloads_dir):
@@ -98,6 +98,11 @@ class PunishmentCog(commands.Cog):
         
         self.prisoner_role_backup_dict[member.id] = member.roles
 
+        if member.voice:
+           self.prisoner_channel_backup[member.id] = member.voice.channel
+        else:
+           self.prisoner_channel_backup[member.id] = None
+
         await member.move_to(prison_channel)
 
         if PUNISHMENT_CHANGE_ROLES:
@@ -116,7 +121,7 @@ class PunishmentCog(commands.Cog):
 
         try:
             self.prisoner_nick_backup_dict[member.id] = member.nick
-            nick = self.bot.args.punish_nick_pattern.format(member.nick)
+            nick = self.bot.args.punish_nick_pattern.format(member.name)
             await member.edit(nick=nick)
             logging.info(f"{member.name} nickname changed to {nick}")
         except Exception as err:
@@ -167,6 +172,12 @@ class PunishmentCog(commands.Cog):
     async def pardon_after(self, ctx, delay, members):
         await asyncio.sleep(delay)
         logging.info("Auto-pardon timeout")
+
+        message = "Prison time of "
+
+        message += ", ".join([member.name for member in members]) + " ended!"
+
+        await ctx.send(message)
         await self.pardon_internal(ctx, members)
 
 
@@ -224,7 +235,8 @@ class PunishmentCog(commands.Cog):
 
     async def mute_until_time(self, member, time):
         try:
-            await member.edit(communication_disabled_until=time)
+            # await member.edit(communication_disabled_until=time)
+            await member.edit(mute=True)
             logging.info(f"Member {member.name} is muted until {time.timestamp()}")
         except Exception as err:
             logging.error(f"Failed to mute {member.name}: {err}")
@@ -233,7 +245,8 @@ class PunishmentCog(commands.Cog):
         logging.info("Forbidden tts finished")
         if e:
             logging.error(f"Forbidden TTSp layback error: {e}")
-        mute_until = datetime.now() + timedelta(seconds=MUTE_DURATION_SECONDS)
+        duration = self.bot.args.forbidden_mute_duration
+        mute_until = datetime.now() + timedelta(seconds=duration)
         task = self.bot.loop.create_task(self.mute_until_time(member, mute_until))
         self.add_background_task(task)
         task.add_done_callback(self.remove_background_task)
@@ -276,19 +289,29 @@ class PunishmentCog(commands.Cog):
                 logging.info(f"Roles of {member.name} restored to {roles}")
 
             if member.voice and member.voice.channel.id == prison_channel.id:
-                logging.info(f"Member moved to channel {ctx.author.voice.channel}")
-                await member.move_to(ctx.author.voice.channel)
+                if member.id in self.prisoner_channel_backup and self.prisoner_channel_backup[member.id]:
+                    await member.move_to(self.prisoner_channel_backup[member.id])
+                    logging.info(f"Member moved to channel {self.prisoner_channel_backup[member.id]}")
+                else:
+                    await member.move_to(ctx.author.voice.channel)
+                    logging.info(f"Member moved to channel {ctx.author.voice.channel}")
+
+                if member.id in self.prisoner_channel_backup:
+                    del self.prisoner_channel_backup[member.id]
             else:
                 logging.info(f"Member is not in {prison_channel.name}, they will not be moved to {ctx.author.voice.channel}")
 
             if member.id in self.prisoner_escape_phrases:
                 del self.prisoner_escape_phrases[member.id]
 
-            if member.id in self.prisoner_nick_backup_dict:
-                nick = self.prisoner_nick_backup_dict[member.id]
-                await member.edit(nick=nick)
-                del self.prisoner_nick_backup_dict[member.id]
-                logging.info(f"{member.name} nickname restored to {nick}")
+            try:
+                if member.id in self.prisoner_nick_backup_dict:
+                    nick = self.prisoner_nick_backup_dict[member.id]
+                    await member.edit(nick=nick)
+                    del self.prisoner_nick_backup_dict[member.id]
+                    logging.info(f"{member.name} nickname restored to {nick}")
+            except Exception as err:
+                logging.error(f"Failed to restore nickname for {member.name}: {err}")
 
             await ctx.send(f"Pardoned user {member.name}")
 

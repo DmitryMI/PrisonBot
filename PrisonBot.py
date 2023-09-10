@@ -79,7 +79,7 @@ async def main():
                     )
 
     parser.add('-c', '--config', required=False, is_config_file=True, help='Config file path', default="config/config.conf")
-    parser.add('--forbidden_path', required=False, help='Path to list of forbidden phrases', default="config/forbidden.txt")
+    parser.add('--forbidden_path', required=False, help='Path to list of forbidden phrases', default="config/forbidden_phrases.txt")
 
     group = parser.add_mutually_exclusive_group(required=True)
 
@@ -100,6 +100,7 @@ async def main():
     parser.add_argument("--tts_language", help="Announcement language", type=str, default="en")
     parser.add_argument("--whisper_language", help="Announcement language", type=str, default="en")
     parser.add_argument("--punish_nick_pattern", help="Pattern for nickname change", type=str, default="Scum ({})")
+    parser.add_argument("--forbidden_mute_duration", help="Mute duration for saying a forbidden phrase (in seconds)", type=int, default=30)
 
     args = parser.parse_args()
 
@@ -116,7 +117,11 @@ async def main():
             return
         with open(token_file_path, 'r') as fin:
             api_token = fin.read()
-    
+
+    if type(args.admin_usernames) is not list:
+        usernames = args.admin_usernames.strip().split(" ")
+        args.admin_usernames = usernames
+
     bot = create_bot(args)
 
     await bot.start(api_token)

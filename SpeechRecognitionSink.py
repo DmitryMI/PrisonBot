@@ -34,11 +34,11 @@ class SpeechRecognitionSink(Sink):
                 "Audio may only be formatted after recording is finished."
             )
         
-
-    def write(self, pcm_bytes, user):
-        Sink.write(self, pcm_bytes, user)
-        
+    def recognise_speech(self):
         for i, user_audio in enumerate(self.get_all_audio()):
+
+            user = list(self.audio_data.keys())[i]
+
             data_chunk_size = self.vc.decoder.SAMPLES_PER_FRAME * self.vc.decoder.SAMPLE_SIZE
             recorded_bytes_length = user_audio.getbuffer().nbytes
             recorded_time = recorded_bytes_length / self.vc.decoder.FRAME_SIZE * self.vc.decoder.FRAME_LENGTH / 1000
@@ -70,3 +70,9 @@ class SpeechRecognitionSink(Sink):
                 stream = io.BytesIO()
                 self.audio_data[user] = discord.sinks.AudioData(stream)
                 self.recognition_timestamps[user] = 0
+
+    def write(self, pcm_bytes, user):
+        Sink.write(self, pcm_bytes, user)
+        
+        self.recognise_speech()
+        
