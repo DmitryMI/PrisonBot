@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
 import logging
@@ -12,6 +13,8 @@ import os.path
 import threading
 
 PUNISHMENT_CHANGE_ROLES = True
+
+MUTE_DURATION_SECONDS=30
 
 # channel_disconnect_lock = threading.Lock()
 background_tasks_lock = threading.Lock()
@@ -196,10 +199,26 @@ class PunishmentCog(commands.Cog):
                 if ratio_forbidden >= 80:
                     logging.info(f"Forbidden line {forbidden_line} detected in {member.name}'s voice")
                     await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio_forbidden}% close to forbidden {forbidden_line}!")
-                    await self.play_tts(ctx, f"{member.id}-forbidden", "Shut up, monkey", None)
-                    await member.edit(mute=True)
+                    await self.play_tts(ctx, f"{member.id}-forbidden", "Shut up, monkey", lambda e: self.forbidden_tts_callback(e, member))
+                    # await member.edit(mute=True)
+                    
                     break
-        
+
+    async def mute_until_time(self, member, time):
+        try:
+            await member.edit(communication_disabled_until=time)
+            logging.info(f"Member {member.name} is muted until {time.timestamp()}")
+        except Exception as err:
+            logging.error(f"Failed to mute {member.name}: {err}")
+
+    def forbidden_tts_callback(self, e, member):
+        logging.info("Forbidden tts finished")
+        if e:
+            logging.error(f"Forbidden TTSp layback error: {e}")
+        mute_until = datetime.now() + timedelta(seconds=MUTE_DURATION_SECONDS)
+        task = self.bot.loop.create_task(self.mute_until_time(member, mute_until))
+        self.add_background_task(task)
+        task.add_done_callback(self.remove_background_task)
 
     def text_recognition_callback(self, sink, user, text):
         asyncio.run_coroutine_threadsafe(self.text_recognition_callback_async(sink, user, text), self.bot.loop)
