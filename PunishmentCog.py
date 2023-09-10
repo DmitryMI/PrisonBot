@@ -87,11 +87,6 @@ class PunishmentCog(commands.Cog):
         else:
             await prison_channel.connect()
 
-        if ctx not in self.sinks_map:
-            sink = SpeechRecognitionSink(self.bot, ctx, self.text_recognition_callback, self.whisper_language)
-            self.sinks_map[ctx] = sink
-            ctx.voice_client.start_recording(sink, self.recording_stopped_callback, ctx)
-
         message = f"{member.name} sent to {prison_channel.name} for bad behavior!"
 
         if escape_phrase:
@@ -107,7 +102,19 @@ class PunishmentCog(commands.Cog):
 
         await ctx.send(message)
 
-        await self.announce_punishment(ctx, member, escape_phrase)
+        def start_recoring(announcement_error):
+            if announcement_error:
+                logging.error(f"Announcement playback error: {announcement_error}")
+                return
+
+            if ctx not in self.sinks_map:
+                sink = SpeechRecognitionSink(self.bot, ctx, self.text_recognition_callback, self.whisper_language)
+                self.sinks_map[ctx] = sink
+                ctx.voice_client.start_recording(sink, self.recording_stopped_callback, ctx)
+                logging.info(f"Recording started in server: {ctx.guild.name}, channel: {ctx.voice_client.channel.name}")
+
+        await self.announce_punishment(ctx, member, escape_phrase, start_recoring)
+
 
     def remove_background_task(self, task):
         with background_tasks_lock:
@@ -119,11 +126,12 @@ class PunishmentCog(commands.Cog):
             self.background_tasks.append(task)
 
     async def recording_stopped_callback(self, sink, ctx):
-        logging.info(f"Stopped recording for sink {sink} in {ctx}")
+        logging.info(f"Stopped recording for sink {sink} in {ctx.guild.name}")
         
 
     async def pardon_after(self, ctx, delay, members):
         await asyncio.sleep(delay)
+        logging.info("Auto-pardon timeout")
         await self.pardon_internal(ctx, members)
 
 
@@ -160,9 +168,10 @@ class PunishmentCog(commands.Cog):
             ratio = fuzz.ratio(sentence, escape_phrase)
             if ratio >= 80:
                 await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio}% close to {escape_phrase}!")
-                
                 await self.pardon_internal(ctx, [member])
-            elif ratio > 50:
+                break
+
+            elif ratio >= 50:
                 await ctx.send(f"Prisoner {member.name} said '{sentence}', which is {ratio}% close to {escape_phrase}!")
         
 
@@ -262,7 +271,7 @@ class PunishmentCog(commands.Cog):
         await self.pardon_internal(ctx, members_to_pardon)
 
 
-    async def announce_punishment(self, ctx: commands.Context, member, escape_phrase,):
+    async def announce_punishment(self, ctx: commands.Context, member, escape_phrase, playback_finished_callback):
 
         text = self.bot.args.announcement_pattern.format(member.name, escape_phrase)
 
@@ -275,7 +284,7 @@ class PunishmentCog(commands.Cog):
         
         audio_source = discord.FFmpegPCMAudio(tts_file)
 
-        ctx.voice_client.play(audio_source, after=lambda e: logging.error(e) if e else None)
+        ctx.voice_client.play(audio_source, after=playback_finished_callback)
 
 
 
