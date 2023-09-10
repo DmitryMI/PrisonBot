@@ -11,7 +11,7 @@ import os
 import os.path
 import threading
 
-PUNISHMENT_CHANGE_ROLES = False
+PUNISHMENT_CHANGE_ROLES = True
 
 # channel_disconnect_lock = threading.Lock()
 background_tasks_lock = threading.Lock()
@@ -75,7 +75,12 @@ class PunishmentCog(commands.Cog):
 
         if PUNISHMENT_CHANGE_ROLES:
             prisoner_role = self.find_role_by_name(ctx, self.prisoner_role_name)
-            await member.edit(roles = [prisoner_role])
+
+            try:
+                await member.edit(roles = [prisoner_role])
+            except Exception as err:
+                logging.error(f"Exception occured during member.edit: {err}")
+                await ctx.send(f"Cannot set role {prisoner_role.name} for {member.name}. Reason: {err}")
 
         if ctx.voice_client:
             await ctx.voice_client.move_to(prison_channel)
@@ -131,11 +136,11 @@ class PunishmentCog(commands.Cog):
 
         text = text.strip()
 
+        member = ctx.guild.get_member(user)
+
         if not text:
             logging.info(f"[Text recognition] {member.name}: <empty string>")
             return
-
-        member = ctx.guild.get_member(user)
 
         escape_phrase = self.prisoner_escape_phrases[user]
 
@@ -162,9 +167,10 @@ class PunishmentCog(commands.Cog):
         
 
     def text_recognition_callback(self, sink, user, text):
-        task = self.bot.loop.create_task(self.text_recognition_callback_async(sink, user, text))
-        self.add_background_task(task)
-        task.add_done_callback(self.remove_background_task)
+        asyncio.run_coroutine_threadsafe(self.text_recognition_callback_async(sink, user, text), self.bot.loop)
+        # task = self.bot.loop.create_task(self.text_recognition_callback_async(sink, user, text))
+        # self.add_background_task(task)
+        # task.add_done_callback(self.remove_background_task)
         
 
     def find_role_by_id(self, ctx: commands.Context, role_id):
@@ -226,8 +232,8 @@ class PunishmentCog(commands.Cog):
                 if not ctx.voice_client:
                     return
 
-                if ctx.voice_client and ctx.voice_client.recording:
-                    ctx.voice_client.stop_recording()
+                # if ctx.voice_client and ctx.voice_client.recording:
+                #     ctx.voice_client.stop_recording()
 
                 await ctx.voice_client.disconnect()
                 del self.sinks_map[ctx]
