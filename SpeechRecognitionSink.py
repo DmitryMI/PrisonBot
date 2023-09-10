@@ -62,9 +62,6 @@ class SpeechRecognitionSink(Sink):
                 wavfile.setframerate(self.vc.decoder.SAMPLING_RATE)
                 wavfile.writeframes(pcm_data_16)
 
-            #pcm_data_float = pcm_data_16.flatten().astype(np.float32) / 32768.0 
-            
-            # result = self.model.transcribe(pcm_data, fp16=False, language=self.whisper_language)
             result = self.model.transcribe(wav_file_path, language=self.whisper_language)
             recognized_text = result["text"]
             self.text_callback(self, user, recognized_text)
