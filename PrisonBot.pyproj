@@ -12,7 +12,8 @@
     <Name>PrisonBot</Name>
     <RootNamespace>PrisonBot</RootNamespace>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <CommandLineArguments>--token_file "C:\Users\DmitriyPC\Documents\MEGA\Документы\discord_bots\prison_bot_token.txt" --prisoner_role "Фашист" --prison_channel "Помоечка" --admin_usernames dmitriymi levanfas --announcement_pattern "Фашистская морда {}, скажи {}" --announcement_language="ru"</CommandLineArguments>
+    <CommandLineArguments>
+    </CommandLineArguments>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
